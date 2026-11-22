@@ -1,0 +1,8 @@
+# Ignore everything not needed inside the image
+README.md
+LICENSE
+.dockerignore
+docker-compose.yml
+nginx.conf
+Dockerfile
+*.md
