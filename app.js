@@ -208,6 +208,13 @@ function renderInitialLayout() {
 
     App.elements.root.innerHTML = `
         <div class="container">
+            <header class="app-header">
+                <a href="${window.location.pathname}" class="app-logo">Narraflix</a>
+                <a href="${window.location.pathname}" class="search-nav-btn" aria-label="Search title or ID">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+                    <span>Search</span>
+                </a>
+            </header>
             <div class="top-section">
                 <div>
                     <div class="stream-player-section skeleton" id="stream-player-section"></div>
@@ -547,62 +554,167 @@ function isValidImdbId(id) {
 }
 
 /**
- * Renders the input form for IMDb/TMDb ID.
+ * Renders the search screen (supports searching by title or entering IMDb ID).
  */
-function renderIdInput() {
+function renderSearchScreen() {
     App.elements.root.innerHTML = `
         <div class="container">
-            <div class="id-input-container">
+            <div class="search-screen-container">
                 <h1>Narraflix</h1>
-                <p>Enter an IMDb ID to get started.</p>
-                <form id="id-form">
-                    <input type="text" id="id-input" placeholder="e.g., tt1727587" required>
-                    <button type="submit">Stream</button>
+                <p>Search any movie or series, or enter an IMDb ID to start streaming.</p>
+                <form id="search-form">
+                    <input type="text" id="search-input" placeholder="e.g. Inception, Breaking Bad, or tt1375666" required autofocus autocomplete="off">
+                    <button type="submit" id="search-btn">Stream</button>
                 </form>
-                <p id="error-message" class="error-message" style="display: none;"></p>
+                <p id="search-error" class="error-message" style="display: none;"></p>
+                <div id="search-results" class="search-results-grid"></div>
             </div>
         </div>
     `;
 
-    const form = document.getElementById('id-form');
-    const input = document.getElementById('id-input');
-    const errorMessage = document.getElementById('error-message');
-    const submitButton = form.querySelector('button');
+    const form = document.getElementById('search-form');
+    const input = document.getElementById('search-input');
+    const submitBtn = document.getElementById('search-btn');
+    const errorMessage = document.getElementById('search-error');
+    const resultsContainer = document.getElementById('search-results');
 
-    const showInputError = (msg) => {
+    const showError = (msg) => {
         errorMessage.textContent = msg;
         errorMessage.style.display = 'block';
     };
 
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const id = input.value.trim();
-        if (!id) return;
+    const clearError = () => {
+        errorMessage.textContent = '';
+        errorMessage.style.display = 'none';
+    };
 
-        // Fast client-side format check before hitting the API
-        if (!isValidImdbId(id)) {
-            showInputError('Invalid format. IMDb IDs look like tt1234567.');
+    const handleSearch = async (query) => {
+        query = query.trim();
+        if (!query) return;
+
+        clearError();
+        resultsContainer.innerHTML = '';
+
+        // If user entered a direct IMDb ID format (tt1234567)
+        if (isValidImdbId(query)) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Validating...';
+            try {
+                const response = await fetch(`https://www.omdbapi.com/?i=${query}&apikey=thewdb`);
+                const data = await response.json();
+                if (data.Response === "True") {
+                    window.location.search = `?id=${query}`;
+                    return;
+                } else {
+                    showError(`No title found for IMDb ID ${query}.`);
+                }
+            } catch (err) {
+                showError('Error validating IMDb ID. Please try again.');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Stream';
+            }
             return;
         }
 
-        submitButton.disabled = true;
-        submitButton.textContent = 'Validating...';
-        errorMessage.style.display = 'none';
+        // Searching by Title
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Searching...';
 
         try {
-            const response = await fetch(`https://www.omdbapi.com/?i=${id}&apikey=thewdb`);
+            const response = await fetch(`https://www.omdbapi.com/?s=${encodeURIComponent(query)}&apikey=thewdb`);
             const data = await response.json();
-            if (data.Response === "True") {
-                window.location.search = `?id=${id}`;
+
+            if (data.Response === "True" && Array.isArray(data.Search) && data.Search.length > 0) {
+                renderSearchResults(data.Search, resultsContainer);
             } else {
-                showInputError('No title found for that IMDb ID. Please try again.');
+                showError(data.Error ? `${data.Error} Please check the spelling.` : `No results found for "${query}".`);
             }
-        } catch (error) {
-            showInputError('An error occurred while validating the ID.');
+        } catch (err) {
+            console.error("Search error:", err);
+            showError('Unable to fetch search results. Please check your connection.');
         } finally {
-            submitButton.disabled = false;
-            submitButton.textContent = 'Stream';
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Stream';
         }
+    };
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleSearch(input.value);
+    });
+
+    // Check if ?s= is present in URL to auto-search on load
+    const params = new URLSearchParams(window.location.search);
+    const searchParam = params.get('s');
+    if (searchParam) {
+        input.value = searchParam;
+        handleSearch(searchParam);
+    }
+}
+
+/**
+ * Safely renders search result cards to the container.
+ * @param {Array} items
+ * @param {HTMLElement} container
+ */
+function renderSearchResults(items, container) {
+    container.innerHTML = '';
+
+    const seen = new Set();
+    const uniqueItems = items.filter(item => {
+        if (!item.imdbID || seen.has(item.imdbID)) return false;
+        seen.add(item.imdbID);
+        return true;
+    });
+
+    uniqueItems.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'search-card';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Play ${item.Title} (${item.Year})`);
+
+        const posterDiv = document.createElement('div');
+        posterDiv.className = 'search-poster';
+        if (item.Poster && item.Poster !== 'N/A') {
+            posterDiv.style.backgroundImage = `url(${item.Poster})`;
+        } else {
+            posterDiv.classList.add('no-poster');
+        }
+
+        const typeBadge = document.createElement('span');
+        typeBadge.className = 'type-badge';
+        typeBadge.textContent = item.Type || 'movie';
+        posterDiv.appendChild(typeBadge);
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'search-card-info';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'search-card-title';
+        titleEl.textContent = item.Title;
+
+        const yearEl = document.createElement('div');
+        yearEl.className = 'search-card-year';
+        yearEl.textContent = item.Year;
+
+        infoDiv.append(titleEl, yearEl);
+        card.append(posterDiv, infoDiv);
+
+        const selectMedia = () => {
+            window.location.search = `?id=${item.imdbID}`;
+        };
+
+        card.addEventListener('click', selectMedia);
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                selectMedia();
+            }
+        });
+
+        container.appendChild(card);
     });
 }
 
@@ -652,7 +764,7 @@ async function init() {
     App.imdbId = params.get('id');
 
     if (!App.imdbId) {
-        renderIdInput();
+        renderSearchScreen();
         return;
     }
 

@@ -78,10 +78,11 @@ narraflix-main/
 ## 🎬 Usage
 
 1. Open Narraflix in your browser (`http://localhost:8080` or your domain).
-2. Enter an **IMDb ID** (e.g. `tt1727587` or `tt36915004`).
-3. Click **Stream** — the player loads automatically.
-4. If a server is slow or buffering, switch to another server on the **Servers** sidebar.
-5. For TV series, use the **Season** and **Episode** dropdowns to navigate.
+2. **Search any title** (e.g. *Inception*, *Breaking Bad*, *Stranger Things*) or enter an **IMDb ID** (e.g. `tt1727587`).
+3. If searching by title, select your movie or series from the visual results grid.
+4. The player loads automatically! If a server is buffering, switch servers anytime on the **Servers** sidebar.
+5. For TV series, use the **Season** and **Episode** dropdowns and **Previous / Next** buttons to binge seamlessly.
+6. Click **Search** in the top navigation anytime to pick another title without reloading.
 
 ---
 
