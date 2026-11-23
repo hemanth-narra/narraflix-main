@@ -31,29 +31,7 @@ function initAdBlocker() {
         return null;
     };
 
-    // ── 2. Prevent unexpected top-frame navigation ────────────────────────────
-    // Tracks whether WE caused the navigation (server switch, episode change, etc.)
-    // so we don't block our own history.pushState calls.
-    let navAllowed = false;
-    const allowNav = () => { navAllowed = true; };
-
-    // Patch pushState/replaceState so our own URL updates stay allowed
-    const _pushState    = history.pushState.bind(history);
-    const _replaceState = history.replaceState.bind(history);
-    history.pushState = (...args)    => { allowNav(); _pushState(...args); };
-    history.replaceState = (...args) => { allowNav(); _replaceState(...args); };
-
-    window.addEventListener('beforeunload', (e) => {
-        if (!navAllowed) {
-            // Cancel the navigation — this stops ad scripts redirecting your tab
-            e.preventDefault();
-            e.returnValue = '';
-            console.debug('[Narraflix] Blocked unexpected page navigation');
-        }
-        navAllowed = false; // reset for next legitimate navigation
-    });
-
-    // ── 3. Remove overlay elements injected into our DOM ─────────────────────
+    // ── 2. Remove overlay elements injected into our DOM ─────────────────────
     // Some ad scripts break out of the iframe and append fixed-position divs
     // or hidden iframes to the parent document. Remove them immediately.
     const SAFE_IDS = new Set(['disclaimer-modal', 'app-root']);
