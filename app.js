@@ -3,6 +3,7 @@
  */
 const App = {
     imdbId: null,
+    tmdbId: null,
     mediaType: 'movie',
     totalSeasons: 0,
     seriesCache: {},
@@ -192,6 +193,10 @@ async function fetchMediaDetails() {
                 if (data && data.Response === "True") {
                     App.mediaType = data.Type;
                     App.totalSeasons = data.totalSeasons;
+                    // Pre-resolve numeric TMDB ID for multi-audio providers like VidBolt
+                    resolveTmdbId(App.imdbId).then(id => {
+                        App.tmdbId = id;
+                    });
                     return data;
                 }
             } catch (omdbErr) {
@@ -247,6 +252,7 @@ async function fetchMediaDetails() {
             } catch (e) {}
 
             const details = fullDetails || tmdbData;
+            App.tmdbId = String(tmdbData.id);
             App.mediaType = type;
             App.totalSeasons = details.number_of_seasons ? String(details.number_of_seasons) : '1';
 
@@ -364,6 +370,37 @@ function createPosterPlaceholder(title, year) {
 }
 
 /**
+ * In-memory cache for resolved TMDB IDs.
+ */
+const tmdbIdCache = new Map();
+
+/**
+ * Resolves a numeric TMDB ID from an IMDb ID (tt...)
+ * @param {string} imdbId
+ * @returns {Promise<string|null>}
+ */
+async function resolveTmdbId(imdbId) {
+    if (!imdbId) return null;
+    if (/^\d+$/.test(String(imdbId))) return String(imdbId);
+    if (tmdbIdCache.has(imdbId)) return tmdbIdCache.get(imdbId);
+
+    const tmdbApiKey = (typeof TMDB_KEY !== 'undefined') ? TMDB_KEY : '1cf50e6248dc270629e802686245c2c8';
+    try {
+        const findRes = await fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`).then(r => r.json());
+        const match = (findRes.movie_results && findRes.movie_results[0]) ||
+                      (findRes.tv_results && findRes.tv_results[0]);
+        if (match && match.id) {
+            const tmdbId = String(match.id);
+            tmdbIdCache.set(imdbId, tmdbId);
+            return tmdbId;
+        }
+    } catch (e) {
+        console.warn('Failed to resolve TMDB ID for:', imdbId, e);
+    }
+    return null;
+}
+
+/**
  * Resolves a missing or broken poster URL via TMDB API.
  * @param {string} imdbId
  * @param {string} title
@@ -385,8 +422,9 @@ async function resolvePosterUrl(imdbId, title, year) {
             const findRes = await fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`).then(r => r.json());
             const match = (findRes.movie_results && findRes.movie_results.find(m => m.poster_path)) ||
                           (findRes.tv_results && findRes.tv_results.find(t => t.poster_path));
-            if (match && match.poster_path) {
-                posterUrl = `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+            if (match) {
+                if (match.id) tmdbIdCache.set(imdbId, String(match.id));
+                if (match.poster_path) posterUrl = `https://image.tmdb.org/t/p/w500${match.poster_path}`;
             }
         } catch (e) {}
     }
@@ -736,9 +774,18 @@ function setupSeriesControls() {
  * Displays the selected stream in the player and updates the URL.
  * @param {string} streamId - The ID of the streaming provider.
  */
-function showStream(streamId) {
+async function showStream(streamId) {
     const provider = STREAMING_PROVIDERS[streamId];
     if (!provider) return;
+
+    // Ensure TMDB ID is resolved (required for VidBolt and other TMDB providers)
+    if (!App.tmdbId && App.imdbId) {
+        if (/^\d+$/.test(String(App.imdbId))) {
+            App.tmdbId = String(App.imdbId);
+        } else {
+            App.tmdbId = await resolveTmdbId(App.imdbId);
+        }
+    }
 
     const params = new URLSearchParams(window.location.search);
     let url;
@@ -749,11 +796,11 @@ function showStream(streamId) {
     if (App.mediaType === 'series') {
         season = App.elements.seasonSelect.value;
         episode = App.elements.episodeSelect.value;
-        url = generateEmbedUrl(streamId, 'series', App.imdbId, season, episode);
+        url = generateEmbedUrl(streamId, 'series', App.imdbId, season, episode, App.tmdbId);
         params.set('season', season);
         params.set('episode', episode);
     } else {
-        url = generateEmbedUrl(streamId, 'movie', App.imdbId);
+        url = generateEmbedUrl(streamId, 'movie', App.imdbId, null, null, App.tmdbId);
     }
     params.set('server', streamId);
     history.pushState({}, '', `${window.location.pathname}?${params.toString()}`);
@@ -1256,7 +1303,6 @@ async function init() {
         renderMediaDetails(data);
         renderServerButtons();
         App.elements.healthButton.addEventListener('click', runHealthCheck);
-        runHealthCheck();   // not awaited; probes must not delay the player
 
         if (App.mediaType === 'series') {
             setupSeriesControls();
@@ -1276,10 +1322,23 @@ async function init() {
         return;
     }
 
-    const serverId = params.get('server') || Object.keys(STREAMING_PROVIDERS)[0];
-    
-    document.querySelector(`.stream-button[data-provider="${serverId}"]`).classList.add('active');
-    showStream(serverId);
+    let serverId = params.get('server');
+    if (serverId) {
+        document.querySelector(`.stream-button[data-provider="${serverId}"]`)?.classList.add('active');
+        await showStream(serverId);
+        runHealthCheck();
+    } else {
+        // Automatically ping all servers concurrently and select the fastest healthy one!
+        if (typeof findFastestProvider === 'function') {
+            serverId = await findFastestProvider({ onResult: renderHealthStatus, timeoutMs: 2500 });
+        } else {
+            serverId = Object.keys(STREAMING_PROVIDERS)[0];
+        }
+        document.querySelectorAll('.stream-button').forEach(btn => btn.classList.remove('active'));
+        document.querySelector(`.stream-button[data-provider="${serverId}"]`)?.classList.add('active');
+        await showStream(serverId);
+        runHealthCheck();
+    }
 }
 
 // Start the application

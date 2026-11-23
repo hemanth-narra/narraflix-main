@@ -98,3 +98,50 @@ async function checkAllProviders(options = {}) {
     await Promise.all(Array.from({ length: workerCount }, worker));
     return results;
 }
+
+/**
+ * Pings all streaming providers concurrently and returns the ID of the fastest healthy ('up') server.
+ * @param {object} [options] - { timeoutMs, onResult }
+ * @returns {Promise<string>} The ID of the fastest responding provider.
+ */
+async function findFastestProvider(options = {}) {
+    const timeoutMs = options.timeoutMs || 2500;
+    const providerIds = Object.keys(STREAMING_PROVIDERS);
+    if (providerIds.length === 0) return null;
+    if (providerIds.length === 1) return providerIds[0];
+
+    return new Promise((resolve) => {
+        let settledCount = 0;
+        let resolved = false;
+
+        const safetyTimer = setTimeout(() => {
+            if (!resolved) {
+                resolved = true;
+                resolve(providerIds[0]);
+            }
+        }, timeoutMs);
+
+        providerIds.forEach(id => {
+            checkProvider(id, { timeoutMs }).then(result => {
+                settledCount++;
+                if (options.onResult) options.onResult(result);
+                if (!resolved && result.status === 'up') {
+                    resolved = true;
+                    clearTimeout(safetyTimer);
+                    resolve(result.id);
+                } else if (!resolved && settledCount === providerIds.length) {
+                    resolved = true;
+                    clearTimeout(safetyTimer);
+                    resolve(providerIds[0]);
+                }
+            }).catch(() => {
+                settledCount++;
+                if (!resolved && settledCount === providerIds.length) {
+                    resolved = true;
+                    clearTimeout(safetyTimer);
+                    resolve(providerIds[0]);
+                }
+            });
+        });
+    });
+}

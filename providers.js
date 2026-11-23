@@ -1,4 +1,10 @@
 const STREAMING_PROVIDERS = {
+    vidbolt: {
+        name: 'VidBolt (Multi-Audio)',
+        movie: (id, tmdbId) => `https://vidbolt.xyz/movie/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://vidbolt.xyz/tv/${tmdbId || id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+    },
     vidfast: {
         name: 'Vidfast',
         movie: (id) => `https://vidfast.vc/movie/${id}`,
@@ -10,6 +16,30 @@ const STREAMING_PROVIDERS = {
         name: 'Vidlink',
         movie: (id) => `https://vidlink.pro/movie/${id}`,
         series: (id, season, episode) => `https://vidlink.pro/tv/${id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+    },
+    vidnest: {
+        name: 'VidNest',
+        movie: (id, tmdbId) => `https://vidnest.fun/movie/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://vidnest.fun/tv/${tmdbId || id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+    },
+    bingeapi: {
+        name: 'BingeAPI',
+        movie: (id, tmdbId) => `https://bingeapi.st/embed/movie/${tmdbId || id}?theme=dark`,
+        series: (id, season, episode, tmdbId) => `https://bingeapi.st/embed/tv/${tmdbId || id}/${season}/${episode}?theme=dark`,
+        referrerPolicy: 'no-referrer'
+    },
+    embedmaster: {
+        name: 'EmbedMaster',
+        movie: (id) => `https://embedmaster.link/movie/${id}`,
+        series: (id, season, episode) => `https://embedmaster.link/tv/${id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+    },
+    movietv: {
+        name: 'MovieTV',
+        movie: (id) => `https://movietvapi.stream/embed/${id}`,
+        series: (id, season, episode) => `https://movietvapi.stream/embed/tv/${id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
     embed2: {
@@ -46,11 +76,15 @@ const STREAMING_PROVIDERS = {
  * @param {string|number} id - TMDB or IMDB id
  * @param {number} [season]
  * @param {number} [episode]
+ * @param {string|number} [tmdbId] - Numeric TMDB ID for providers requiring TMDB format
  * @returns {string|null}
  */
-function generateEmbedUrl(provider, type, id, season, episode) {
+function generateEmbedUrl(provider, type, id, season, episode, tmdbId) {
     if (STREAMING_PROVIDERS[provider] && STREAMING_PROVIDERS[provider][type]) {
-        return STREAMING_PROVIDERS[provider][type](id, season, episode);
+        if (type === 'movie') {
+            return STREAMING_PROVIDERS[provider].movie(id, tmdbId);
+        }
+        return STREAMING_PROVIDERS[provider].series(id, season, episode, tmdbId);
     }
     return null;
 }
