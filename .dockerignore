@@ -3,6 +3,5 @@ README.md
 LICENSE
 .dockerignore
 docker-compose.yml
-nginx.conf
 Dockerfile
 *.md
