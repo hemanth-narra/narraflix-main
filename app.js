@@ -510,9 +510,12 @@ function showStream(streamId) {
     const params = new URLSearchParams(window.location.search);
     let url;
 
+    let season = null;
+    let episode = null;
+
     if (App.mediaType === 'series') {
-        const season = App.elements.seasonSelect.value;
-        const episode = App.elements.episodeSelect.value;
+        season = App.elements.seasonSelect.value;
+        episode = App.elements.episodeSelect.value;
         url = generateEmbedUrl(streamId, 'series', App.imdbId, season, episode);
         params.set('season', season);
         params.set('episode', episode);
@@ -531,6 +534,21 @@ function showStream(streamId) {
     iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; web-share');
     iframe.setAttribute('referrerpolicy', provider.referrerPolicy || 'no-referrer');
     App.elements.playerSection.replaceChildren(iframe);
+
+    // Save to Continue Watching history
+    if (App.currentMedia) {
+        saveToWatchHistory({
+            id: App.imdbId,
+            title: App.currentMedia.Title,
+            year: App.currentMedia.Year,
+            poster: App.currentMedia.Poster,
+            type: App.mediaType,
+            season: season,
+            episode: episode,
+            server: streamId,
+            timestamp: Date.now()
+        });
+    }
 }
 
 /**
@@ -544,6 +562,48 @@ function renderError(message) {
     App.elements.root.replaceChildren(div);
 }
 
+const WATCH_HISTORY_KEY = 'narraflix_watch_history';
+
+/**
+ * Retrieves the watch history from localStorage.
+ * @returns {Array<object>}
+ */
+function getWatchHistory() {
+    try {
+        const stored = localStorage.getItem(WATCH_HISTORY_KEY);
+        return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+/**
+ * Saves or updates a media item in the watch history.
+ * @param {object} item
+ */
+function saveToWatchHistory(item) {
+    try {
+        let history = getWatchHistory();
+        history = history.filter(h => h.id !== item.id);
+        history.unshift(item);
+        if (history.length > 15) history.length = 15;
+        localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(history));
+    } catch (e) {
+        console.warn('Failed to save watch history:', e);
+    }
+}
+
+/**
+ * Removes an item from watch history.
+ * @param {string} id
+ */
+function removeFromWatchHistory(id) {
+    try {
+        const history = getWatchHistory().filter(h => h.id !== id);
+        localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(history));
+    } catch (e) {}
+}
+
 /**
  * Returns true if the string looks like a valid IMDb ID (tt + 7 or 8 digits).
  * @param {string} id
@@ -551,6 +611,156 @@ function renderError(message) {
  */
 function isValidImdbId(id) {
     return /^tt\d{7,8}$/.test(id);
+}
+
+/**
+ * Creates a shelf element (Continue Watching, Top 10 Movies, or Top 10 Series).
+ * @param {object} config - { title, icon, items, isHistory, isRanked }
+ * @returns {HTMLElement}
+ */
+function createShelfElement({ title, icon, items, isHistory = false, isRanked = false }) {
+    const section = document.createElement('section');
+    section.className = 'shelf-section';
+
+    const header = document.createElement('div');
+    header.className = 'shelf-header';
+    header.innerHTML = `
+        <h2 class="shelf-title">
+            <span class="shelf-icon">${icon}</span>
+            <span>${title}</span>
+        </h2>
+    `;
+    section.appendChild(header);
+
+    const scrollContainer = document.createElement('div');
+    scrollContainer.className = 'shelf-scroll';
+
+    items.forEach((item, index) => {
+        const card = document.createElement('div');
+        card.className = 'shelf-card';
+        card.setAttribute('role', 'button');
+        card.setAttribute('tabindex', '0');
+        card.setAttribute('aria-label', `Play ${item.title}`);
+
+        const posterDiv = document.createElement('div');
+        posterDiv.className = 'shelf-poster';
+        if (item.poster && item.poster !== 'N/A') {
+            posterDiv.style.backgroundImage = `url(${item.poster})`;
+        } else {
+            posterDiv.classList.add('no-poster');
+        }
+
+        // Badges: Rank Badge (#1 - #10) or Resume Badge (S1 : E2)
+        if (isRanked) {
+            const rankBadge = document.createElement('span');
+            rankBadge.className = 'shelf-rank-badge';
+            rankBadge.textContent = `#${item.rank || index + 1}`;
+            posterDiv.appendChild(rankBadge);
+        } else if (isHistory) {
+            const resumeBadge = document.createElement('span');
+            resumeBadge.className = 'shelf-resume-badge';
+            if (item.type === 'series' && item.season && item.episode) {
+                resumeBadge.textContent = `S${item.season} : E${item.episode}`;
+            } else {
+                resumeBadge.textContent = 'Movie';
+            }
+            posterDiv.appendChild(resumeBadge);
+
+            // Remove button for history item
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'shelf-remove-btn';
+            removeBtn.title = 'Remove from Continue Watching';
+            removeBtn.setAttribute('aria-label', `Remove ${item.title} from history`);
+            removeBtn.innerHTML = `&times;`;
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
+                removeFromWatchHistory(item.id);
+                const shelvesContainer = document.getElementById('home-shelves');
+                if (shelvesContainer) renderHomeShelves(shelvesContainer);
+            };
+            posterDiv.appendChild(removeBtn);
+        }
+
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'shelf-card-info';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'shelf-card-title';
+        titleEl.textContent = item.title;
+
+        const yearEl = document.createElement('div');
+        yearEl.className = 'shelf-card-year';
+        yearEl.textContent = item.year || '';
+
+        infoDiv.append(titleEl, yearEl);
+        card.append(posterDiv, infoDiv);
+
+        const openMedia = () => {
+            const params = new URLSearchParams();
+            params.set('id', item.id);
+            if (item.season) params.set('season', item.season);
+            if (item.episode) params.set('episode', item.episode);
+            if (item.server) params.set('server', item.server);
+            window.location.search = `?${params.toString()}`;
+        };
+
+        card.addEventListener('click', openMedia);
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openMedia();
+            }
+        });
+
+        scrollContainer.appendChild(card);
+    });
+
+    section.appendChild(scrollContainer);
+    return section;
+}
+
+/**
+ * Renders all home page shelves: Continue Watching, Top 10 Movies, Top 10 Webseries.
+ * @param {HTMLElement} container
+ */
+function renderHomeShelves(container) {
+    container.innerHTML = '';
+
+    const history = getWatchHistory();
+
+    // ── 1. Continue Watching Shelf ──────────────────────────────────────────
+    if (history.length > 0) {
+        const historyShelf = createShelfElement({
+            title: 'Continue Watching',
+            icon: '🕒',
+            items: history,
+            isHistory: true
+        });
+        container.appendChild(historyShelf);
+    }
+
+    // ── 2. Top 10 Movies Shelf ──────────────────────────────────────────────
+    if (typeof FEATURED_MOVIES !== 'undefined' && FEATURED_MOVIES.length > 0) {
+        const moviesShelf = createShelfElement({
+            title: 'Top 10 Movies',
+            icon: '🎬',
+            items: FEATURED_MOVIES,
+            isRanked: true
+        });
+        container.appendChild(moviesShelf);
+    }
+
+    // ── 3. Top 10 Webseries Shelf ───────────────────────────────────────────
+    if (typeof FEATURED_SERIES !== 'undefined' && FEATURED_SERIES.length > 0) {
+        const seriesShelf = createShelfElement({
+            title: 'Top 10 Webseries',
+            icon: '📺',
+            items: FEATURED_SERIES,
+            isRanked: true
+        });
+        container.appendChild(seriesShelf);
+    }
 }
 
 /**
@@ -567,7 +777,8 @@ function renderSearchScreen() {
                     <button type="submit" id="search-btn">Stream</button>
                 </form>
                 <p id="search-error" class="error-message" style="display: none;"></p>
-                <div id="search-results" class="search-results-grid"></div>
+                <div id="search-results" class="search-results-grid" style="display: none;"></div>
+                <div id="home-shelves" class="home-shelves-container"></div>
             </div>
         </div>
     `;
@@ -577,6 +788,10 @@ function renderSearchScreen() {
     const submitBtn = document.getElementById('search-btn');
     const errorMessage = document.getElementById('search-error');
     const resultsContainer = document.getElementById('search-results');
+    const shelvesContainer = document.getElementById('home-shelves');
+
+    // Populate shelves initially
+    renderHomeShelves(shelvesContainer);
 
     const showError = (msg) => {
         errorMessage.textContent = msg;
@@ -590,10 +805,17 @@ function renderSearchScreen() {
 
     const handleSearch = async (query) => {
         query = query.trim();
-        if (!query) return;
+        if (!query) {
+            clearError();
+            resultsContainer.style.display = 'none';
+            shelvesContainer.style.display = 'block';
+            return;
+        }
 
         clearError();
         resultsContainer.innerHTML = '';
+        shelvesContainer.style.display = 'none';
+        resultsContainer.style.display = 'grid';
 
         // If user entered a direct IMDb ID format (tt1234567)
         if (isValidImdbId(query)) {
@@ -642,6 +864,15 @@ function renderSearchScreen() {
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         handleSearch(input.value);
+    });
+
+    // When the user clears the input box, restore the shelves!
+    input.addEventListener('input', () => {
+        if (!input.value.trim()) {
+            clearError();
+            resultsContainer.style.display = 'none';
+            shelvesContainer.style.display = 'block';
+        }
     });
 
     // Check if ?s= is present in URL to auto-search on load
@@ -773,6 +1004,7 @@ async function init() {
     const data = await fetchMediaDetails();
 
     if (data) {
+        App.currentMedia = data;
         renderMediaDetails(data);
         renderServerButtons();
         App.elements.healthButton.addEventListener('click', runHealthCheck);

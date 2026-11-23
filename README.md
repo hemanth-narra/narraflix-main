@@ -62,8 +62,9 @@ Narraflix includes client-side defenses against annoying ads and malicious redir
 ```
 narraflix-main/
 ├── index.html          # App shell & disclaimer modal
-├── app.js              # Core logic, rendering, navigation & anti-redirect
-├── style.css           # Modern dark styling, animations, responsive layout
+├── app.js              # Core logic, continue watching, search & shelves
+├── featured.js         # Curated Top 10 Movies & Webseries
+├── style.css           # Pitch black styling, animations, responsive layout
 ├── providers.js        # Streaming provider configurations & embed builders
 ├── health.js           # Server health checking system
 ├── Dockerfile          # Lightweight nginx:alpine container
