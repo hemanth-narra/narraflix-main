@@ -19,27 +19,27 @@ const STREAMING_PROVIDERS = {
     },
     vidlink: {
         name: 'Vidlink',
-        movie: (id) => `https://vidlink.pro/movie/${id}`,
-        series: (id, season, episode) => `https://vidlink.pro/tv/${id}/${season}/${episode}`,
+        movie: (id, tmdbId) => `https://vidlink.pro/movie/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://vidlink.pro/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
     embedmaster: {
         name: 'EmbedMaster',
-        movie: (id) => `https://embedmaster.link/movie/${id}`,
-        series: (id, season, episode) => `https://embedmaster.link/tv/${id}/${season}/${episode}`,
+        movie: (id, tmdbId) => `https://embedmaster.link/movie/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://embedmaster.link/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
     vidfast: {
         name: 'Vidfast',
-        movie: (id) => `https://vidfast.vc/movie/${id}`,
-        series: (id, season, episode) => `https://vidfast.pro/tv/${id}/${season}/${episode}`,
+        movie: (id, tmdbId) => `https://vidfast.vc/movie/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://vidfast.pro/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
         // Domains: https://vidsrc.domains/
     },
     movietv: {
         name: 'MovieTV',
-        movie: (id) => `https://movietvapi.stream/embed/${id}`,
-        series: (id, season, episode) => `https://movietvapi.stream/embed/tv/${id}/${season}/${episode}`,
+        movie: (id, tmdbId) => `https://movietvapi.stream/embed/${tmdbId || id}`,
+        series: (id, season, episode, tmdbId) => `https://movietvapi.stream/embed/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
     multiembed: {
