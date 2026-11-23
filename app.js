@@ -787,11 +787,33 @@ async function showStream(streamId) {
     iframe.src = url;
     iframe.title = 'Narraflix Player';
     iframe.allowFullscreen = true;
-    // Permissions Policy: grant only what video players genuinely need.
-    // No sandbox (providers reject it), but we restrict sensitive APIs.
-    iframe.setAttribute('allow', 'autoplay; fullscreen; picture-in-picture; web-share');
+    iframe.setAttribute('allowfullscreen', 'true');
+    iframe.setAttribute('webkitallowfullscreen', 'true');
+    iframe.setAttribute('mozallowfullscreen', 'true');
+    // Permissions Policy: grant full permissions for video playback, EME/DRM, and fullscreen
+    iframe.setAttribute('allow', 'autoplay *; fullscreen *; picture-in-picture *; encrypted-media *; web-share *');
     iframe.setAttribute('referrerpolicy', provider.referrerPolicy || 'no-referrer');
-    App.elements.playerSection.replaceChildren(iframe);
+
+    // Dedicated Fullscreen Toggle Button (works even if provider's button is blocked)
+    const fsBtn = document.createElement('button');
+    fsBtn.type = 'button';
+    fsBtn.className = 'player-fullscreen-btn';
+    fsBtn.setAttribute('title', 'Toggle Fullscreen (F)');
+    fsBtn.setAttribute('aria-label', 'Toggle Fullscreen');
+    fsBtn.innerHTML = `
+        <svg class="fs-enter-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+        <svg class="fs-exit-icon" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+            <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-14v3h3v2h-5V5h2z"/>
+        </svg>
+    `;
+    fsBtn.onclick = (e) => {
+        e.stopPropagation();
+        togglePlayerFullscreen();
+    };
+
+    App.elements.playerSection.replaceChildren(iframe, fsBtn);
 
     // Save to Continue Watching history
     if (App.currentMedia) {
@@ -808,6 +830,38 @@ async function showStream(streamId) {
         });
     }
 }
+
+/**
+ * Toggles native fullscreen for the player section.
+ */
+function togglePlayerFullscreen() {
+    const el = App.elements.playerSection;
+    if (!el) return;
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (el.requestFullscreen) {
+            el.requestFullscreen().catch(() => {});
+        } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+        }
+    }
+}
+
+// Global keyboard shortcut: press 'F' to toggle fullscreen
+window.addEventListener('keydown', (e) => {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) return;
+    if (e.key === 'f' || e.key === 'F') {
+        if (App.elements.playerSection && !App.elements.playerSection.classList.contains('skeleton')) {
+            e.preventDefault();
+            togglePlayerFullscreen();
+        }
+    }
+});
 
 /**
  * Displays an error message safely without innerHTML injection.
