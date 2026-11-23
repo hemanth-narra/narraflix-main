@@ -184,15 +184,91 @@ function initBackgroundEffect() {
  */
 async function fetchMediaDetails() {
     try {
-        const response = await fetch(`https://www.omdbapi.com/?i=${App.imdbId}&apikey=thewdb`);
-        const data = await response.json();
-        if (data.Response !== "True") {
-            console.warn("Media not found in OMDb API.");
-            return null;
+        // 1. Try OMDb API if we have an IMDb ID (tt...)
+        if (typeof App.imdbId === 'string' && App.imdbId.startsWith('tt')) {
+            try {
+                const response = await fetch(`https://www.omdbapi.com/?i=${App.imdbId}&apikey=thewdb`);
+                const data = await response.json();
+                if (data && data.Response === "True") {
+                    App.mediaType = data.Type;
+                    App.totalSeasons = data.totalSeasons;
+                    return data;
+                }
+            } catch (omdbErr) {
+                console.warn("OMDb request failed, trying TMDB fallback:", omdbErr);
+            }
         }
-        App.mediaType = data.Type;
-        App.totalSeasons = data.totalSeasons;
-        return data;
+
+        // 2. TMDB fallback (handles numeric TMDB IDs or IMDb IDs that failed on OMDb)
+        const tmdbApiKey = (typeof TMDB_KEY !== 'undefined') ? TMDB_KEY : '1cf50e6248dc270629e802686245c2c8';
+        let tmdbData = null;
+        let type = 'movie';
+
+        if (typeof App.imdbId === 'string' && App.imdbId.startsWith('tt')) {
+            const findRes = await fetch(`https://api.themoviedb.org/3/find/${App.imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`).then(r => r.json());
+            if (findRes.movie_results && findRes.movie_results.length > 0) {
+                tmdbData = findRes.movie_results[0];
+                type = 'movie';
+            } else if (findRes.tv_results && findRes.tv_results.length > 0) {
+                tmdbData = findRes.tv_results[0];
+                type = 'series';
+            }
+        } else {
+            // Numeric TMDB ID: try movie then tv
+            try {
+                const mov = await fetch(`https://api.themoviedb.org/3/movie/${App.imdbId}?api_key=${tmdbApiKey}`).then(r => r.json());
+                if (mov && (mov.title || mov.id)) {
+                    tmdbData = mov;
+                    type = 'movie';
+                }
+            } catch (e) {}
+
+            if (!tmdbData) {
+                try {
+                    const tv = await fetch(`https://api.themoviedb.org/3/tv/${App.imdbId}?api_key=${tmdbApiKey}`).then(r => r.json());
+                    if (tv && (tv.name || tv.id)) {
+                        tmdbData = tv;
+                        type = 'series';
+                    }
+                } catch (e) {}
+            }
+        }
+
+        if (tmdbData) {
+            let imdbId = App.imdbId;
+            let fullDetails = null;
+            try {
+                const endpoint = type === 'series' ? 'tv' : 'movie';
+                fullDetails = await fetch(`https://api.themoviedb.org/3/${endpoint}/${tmdbData.id}?api_key=${tmdbApiKey}&append_to_response=external_ids`).then(r => r.json());
+                if (fullDetails && fullDetails.external_ids && fullDetails.external_ids.imdb_id) {
+                    App.imdbId = fullDetails.external_ids.imdb_id;
+                    imdbId = fullDetails.external_ids.imdb_id;
+                }
+            } catch (e) {}
+
+            const details = fullDetails || tmdbData;
+            App.mediaType = type;
+            App.totalSeasons = details.number_of_seasons ? String(details.number_of_seasons) : '1';
+
+            return {
+                Title: details.title || details.name || details.original_title || details.original_name,
+                Year: (details.release_date || details.first_air_date || '').split('-')[0] || '',
+                Rated: details.adult ? 'R' : 'PG-13',
+                Runtime: details.runtime ? `${details.runtime} min` : (details.episode_run_time && details.episode_run_time[0] ? `${details.episode_run_time[0]} min` : 'N/A'),
+                Genre: details.genres && details.genres.length > 0 ? details.genres.map(g => g.name).join(', ') : 'Drama',
+                Director: 'N/A',
+                Actors: 'N/A',
+                Plot: details.overview || 'No plot synopsis available.',
+                Poster: details.poster_path ? `https://image.tmdb.org/t/p/w500${details.poster_path}` : 'N/A',
+                Ratings: details.vote_average ? [{ Source: 'TMDB', Value: `${details.vote_average.toFixed(1)}/10` }] : [],
+                Type: type,
+                totalSeasons: App.totalSeasons,
+                imdbID: imdbId
+            };
+        }
+
+        console.warn("Media not found in OMDb or TMDB.");
+        return null;
     } catch (error) {
         console.error("Error fetching media details:", error);
         return null;
@@ -284,7 +360,14 @@ function renderMediaDetails(data) {
     // Poster — fall back gracefully if poster is missing
     const posterEl = el('div', 'poster');
     const posterUrl = data.Poster && data.Poster !== 'N/A' ? data.Poster : '';
-    if (posterUrl) posterEl.style.backgroundImage = `url(${posterUrl})`;
+    if (posterUrl) {
+        const img = el('img', 'poster-img');
+        img.src = posterUrl;
+        img.alt = `${data.Title} poster`;
+        img.referrerPolicy = 'no-referrer';
+        img.onerror = () => { img.style.display = 'none'; };
+        posterEl.appendChild(img);
+    }
     posterEl.setAttribute('role', 'img');
     posterEl.setAttribute('aria-label', `${data.Title} poster`);
 
@@ -397,7 +480,7 @@ async function fetchEpisodes(season) {
     try {
         const response = await fetch(`https://www.omdbapi.com/?i=${App.imdbId}&Season=${season}&apikey=thewdb`);
         const data = await response.json();
-        if (data.Response === "True" && data.Episodes) {
+        if (data.Response === "True" && data.Episodes && data.Episodes.length > 0) {
             App.seriesCache[season] = data.Episodes;
             data.Episodes.forEach(episode => {
                 const option = document.createElement('option');
@@ -405,10 +488,24 @@ async function fetchEpisodes(season) {
                 option.textContent = `Episode ${episode.Episode}: ${episode.Title}`;
                 episodeSelect.appendChild(option);
             });
+            return;
         }
     } catch (error) {
-        console.error("Error fetching episodes:", error);
+        console.error("Error fetching episodes from OMDb:", error);
     }
+
+    // Fallback: generate default episodes so series is always playable
+    const fallbackEpisodes = Array.from({ length: 24 }, (_, i) => ({
+        Episode: String(i + 1),
+        Title: `Episode ${i + 1}`
+    }));
+    App.seriesCache[season] = fallbackEpisodes;
+    fallbackEpisodes.forEach(ep => {
+        const option = document.createElement('option');
+        option.value = ep.Episode;
+        option.textContent = ep.Title;
+        episodeSelect.appendChild(option);
+    });
 }
 
 /**
@@ -645,7 +742,17 @@ function createShelfElement({ title, icon, items, isHistory = false, isRanked = 
         const posterDiv = document.createElement('div');
         posterDiv.className = 'shelf-poster';
         if (item.poster && item.poster !== 'N/A') {
-            posterDiv.style.backgroundImage = `url(${item.poster})`;
+            const img = document.createElement('img');
+            img.className = 'shelf-poster-img';
+            img.src = item.poster;
+            img.alt = item.title;
+            img.loading = 'lazy';
+            img.referrerPolicy = 'no-referrer';
+            img.onerror = () => {
+                img.style.display = 'none';
+                posterDiv.classList.add('no-poster');
+            };
+            posterDiv.appendChild(img);
         } else {
             posterDiv.classList.add('no-poster');
         }
@@ -790,8 +897,17 @@ function renderSearchScreen() {
     const resultsContainer = document.getElementById('search-results');
     const shelvesContainer = document.getElementById('home-shelves');
 
-    // Populate shelves initially
+    // Populate shelves initially (instant display from cache / fallbacks)
     renderHomeShelves(shelvesContainer);
+
+    // Fetch daily dynamic trending from TMDB
+    if (typeof loadDailyTrending === 'function') {
+        loadDailyTrending(() => {
+            if (shelvesContainer && shelvesContainer.style.display !== 'none') {
+                renderHomeShelves(shelvesContainer);
+            }
+        });
+    }
 
     const showError = (msg) => {
         errorMessage.textContent = msg;
@@ -909,7 +1025,17 @@ function renderSearchResults(items, container) {
         const posterDiv = document.createElement('div');
         posterDiv.className = 'search-poster';
         if (item.Poster && item.Poster !== 'N/A') {
-            posterDiv.style.backgroundImage = `url(${item.Poster})`;
+            const img = document.createElement('img');
+            img.className = 'search-poster-img';
+            img.src = item.Poster;
+            img.alt = item.Title;
+            img.loading = 'lazy';
+            img.referrerPolicy = 'no-referrer';
+            img.onerror = () => {
+                img.style.display = 'none';
+                posterDiv.classList.add('no-poster');
+            };
+            posterDiv.appendChild(img);
         } else {
             posterDiv.classList.add('no-poster');
         }
