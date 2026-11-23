@@ -337,6 +337,143 @@ function renderInitialLayout() {
 }
 
 /**
+ * In-memory cache for resolved TMDB posters to avoid duplicate network calls.
+ */
+const posterCache = new Map();
+
+/**
+ * Creates a stylish typographic placeholder for media missing a poster image.
+ * @param {string} title
+ * @param {string} [year]
+ * @returns {HTMLElement}
+ */
+function createPosterPlaceholder(title, year) {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'poster-placeholder';
+    placeholder.innerHTML = `
+        <div class="poster-placeholder-glow"></div>
+        <div class="poster-placeholder-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor">
+                <path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/>
+            </svg>
+        </div>
+        <div class="poster-placeholder-title">${title || 'Narraflix'}</div>
+        ${year ? `<div class="poster-placeholder-year">${year}</div>` : ''}
+    `;
+    return placeholder;
+}
+
+/**
+ * Resolves a missing or broken poster URL via TMDB API.
+ * @param {string} imdbId
+ * @param {string} title
+ * @param {string} [year]
+ * @returns {Promise<string|null>}
+ */
+async function resolvePosterUrl(imdbId, title, year) {
+    const cacheKey = imdbId || `${title}_${year}`;
+    if (posterCache.has(cacheKey)) {
+        return posterCache.get(cacheKey);
+    }
+
+    const tmdbApiKey = (typeof TMDB_KEY !== 'undefined') ? TMDB_KEY : '1cf50e6248dc270629e802686245c2c8';
+    let posterUrl = null;
+
+    // 1. Try TMDB /find by IMDb ID
+    if (imdbId && typeof imdbId === 'string' && imdbId.startsWith('tt')) {
+        try {
+            const findRes = await fetch(`https://api.themoviedb.org/3/find/${imdbId}?api_key=${tmdbApiKey}&external_source=imdb_id`).then(r => r.json());
+            const match = (findRes.movie_results && findRes.movie_results.find(m => m.poster_path)) ||
+                          (findRes.tv_results && findRes.tv_results.find(t => t.poster_path));
+            if (match && match.poster_path) {
+                posterUrl = `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+            }
+        } catch (e) {}
+    }
+
+    // 2. Search TMDB multi by title if still no poster
+    if (!posterUrl && title) {
+        try {
+            const cleanTitle = title.replace(/\(.*?\)/g, '').trim();
+            const searchRes = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${tmdbApiKey}&query=${encodeURIComponent(cleanTitle)}`).then(r => r.json());
+            if (searchRes.results && searchRes.results.length > 0) {
+                let match = null;
+                if (year) {
+                    const y = parseInt(year, 10);
+                    match = searchRes.results.find(r => {
+                        const releaseYear = parseInt((r.release_date || r.first_air_date || '').split('-')[0], 10);
+                        return r.poster_path && Math.abs(releaseYear - y) <= 1;
+                    });
+                }
+                if (!match) {
+                    match = searchRes.results.find(r => r.poster_path);
+                }
+                if (match && match.poster_path) {
+                    posterUrl = `https://image.tmdb.org/t/p/w500${match.poster_path}`;
+                }
+            }
+        } catch (e) {}
+    }
+
+    posterCache.set(cacheKey, posterUrl);
+    return posterUrl;
+}
+
+/**
+ * Mounts a poster image with automatic TMDB fallback and elegant typographic placeholder.
+ */
+function attachPoster({ container, posterUrl, title, year, imdbId, imgClass = 'shelf-poster-img' }) {
+    const hasInitialPoster = posterUrl && posterUrl !== 'N/A';
+    const placeholder = createPosterPlaceholder(title, year);
+    container.appendChild(placeholder);
+
+    if (hasInitialPoster) {
+        const img = document.createElement('img');
+        img.className = imgClass;
+        img.src = posterUrl;
+        img.alt = `${title} poster`;
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+
+        img.onload = () => {
+            placeholder.style.display = 'none';
+        };
+
+        img.onerror = async () => {
+            img.style.display = 'none';
+            placeholder.style.display = 'flex';
+            const fallbackUrl = await resolvePosterUrl(imdbId, title, year);
+            if (fallbackUrl && fallbackUrl !== posterUrl) {
+                img.src = fallbackUrl;
+                img.style.display = 'block';
+            }
+        };
+
+        container.appendChild(img);
+    } else {
+        // No initial poster: resolve via TMDB asynchronously
+        resolvePosterUrl(imdbId, title, year).then(tmdbUrl => {
+            if (tmdbUrl) {
+                const img = document.createElement('img');
+                img.className = imgClass;
+                img.src = tmdbUrl;
+                img.alt = `${title} poster`;
+                img.loading = 'lazy';
+                img.referrerPolicy = 'no-referrer';
+                img.onload = () => {
+                    placeholder.style.display = 'none';
+                };
+                img.onerror = () => {
+                    img.style.display = 'none';
+                    placeholder.style.display = 'flex';
+                };
+                container.appendChild(img);
+            }
+        });
+    }
+}
+
+/**
  * Populates the info section with media details, replacing its skeleton.
  * @param {object} data - The media data from OMDb API.
  */
@@ -357,17 +494,16 @@ function renderMediaDetails(data) {
         ratingsDiv.append(ratingEl);
     });
 
-    // Poster — fall back gracefully if poster is missing
+    // Poster — fall back gracefully with TMDB fallback & elegant placeholder
     const posterEl = el('div', 'poster');
-    const posterUrl = data.Poster && data.Poster !== 'N/A' ? data.Poster : '';
-    if (posterUrl) {
-        const img = el('img', 'poster-img');
-        img.src = posterUrl;
-        img.alt = `${data.Title} poster`;
-        img.referrerPolicy = 'no-referrer';
-        img.onerror = () => { img.style.display = 'none'; };
-        posterEl.appendChild(img);
-    }
+    attachPoster({
+        container: posterEl,
+        posterUrl: data.Poster,
+        title: data.Title,
+        year: data.Year,
+        imdbId: App.imdbId,
+        imgClass: 'poster-img'
+    });
     posterEl.setAttribute('role', 'img');
     posterEl.setAttribute('aria-label', `${data.Title} poster`);
 
@@ -741,21 +877,14 @@ function createShelfElement({ title, icon, items, isHistory = false, isRanked = 
 
         const posterDiv = document.createElement('div');
         posterDiv.className = 'shelf-poster';
-        if (item.poster && item.poster !== 'N/A') {
-            const img = document.createElement('img');
-            img.className = 'shelf-poster-img';
-            img.src = item.poster;
-            img.alt = item.title;
-            img.loading = 'lazy';
-            img.referrerPolicy = 'no-referrer';
-            img.onerror = () => {
-                img.style.display = 'none';
-                posterDiv.classList.add('no-poster');
-            };
-            posterDiv.appendChild(img);
-        } else {
-            posterDiv.classList.add('no-poster');
-        }
+        attachPoster({
+            container: posterDiv,
+            posterUrl: item.poster,
+            title: item.title,
+            year: item.year,
+            imdbId: item.id,
+            imgClass: 'shelf-poster-img'
+        });
 
         // Badges: Rank Badge (#1 - #10) or Resume Badge (S1 : E2)
         if (isRanked) {
@@ -1024,21 +1153,14 @@ function renderSearchResults(items, container) {
 
         const posterDiv = document.createElement('div');
         posterDiv.className = 'search-poster';
-        if (item.Poster && item.Poster !== 'N/A') {
-            const img = document.createElement('img');
-            img.className = 'search-poster-img';
-            img.src = item.Poster;
-            img.alt = item.Title;
-            img.loading = 'lazy';
-            img.referrerPolicy = 'no-referrer';
-            img.onerror = () => {
-                img.style.display = 'none';
-                posterDiv.classList.add('no-poster');
-            };
-            posterDiv.appendChild(img);
-        } else {
-            posterDiv.classList.add('no-poster');
-        }
+        attachPoster({
+            container: posterDiv,
+            posterUrl: item.Poster,
+            title: item.Title,
+            year: item.Year,
+            imdbId: item.imdbID,
+            imgClass: 'search-poster-img'
+        });
 
         const typeBadge = document.createElement('span');
         typeBadge.className = 'type-badge';
