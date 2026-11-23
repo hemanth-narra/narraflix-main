@@ -5,17 +5,10 @@ const STREAMING_PROVIDERS = {
         series: (id, season, episode, tmdbId) => `https://vidbolt.xyz/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
-    vidfast: {
-        name: 'Vidfast',
-        movie: (id) => `https://vidfast.vc/movie/${id}`,
-        series: (id, season, episode) => `https://vidfast.pro/tv/${id}/${season}/${episode}`,
-        referrerPolicy: 'no-referrer'
-        // Domains: https://vidsrc.domains/
-    },
-    vidlink: {
-        name: 'Vidlink',
-        movie: (id) => `https://vidlink.pro/movie/${id}`,
-        series: (id, season, episode) => `https://vidlink.pro/tv/${id}/${season}/${episode}`,
+    bingeapi: {
+        name: 'BingeAPI',
+        movie: (id, tmdbId) => `https://bingeapi.st/embed/movie/${tmdbId || id}?theme=dark`,
+        series: (id, season, episode, tmdbId) => `https://bingeapi.st/embed/tv/${tmdbId || id}/${season}/${episode}?theme=dark`,
         referrerPolicy: 'no-referrer'
     },
     vidnest: {
@@ -24,10 +17,10 @@ const STREAMING_PROVIDERS = {
         series: (id, season, episode, tmdbId) => `https://vidnest.fun/tv/${tmdbId || id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
-    bingeapi: {
-        name: 'BingeAPI',
-        movie: (id, tmdbId) => `https://bingeapi.st/embed/movie/${tmdbId || id}?theme=dark`,
-        series: (id, season, episode, tmdbId) => `https://bingeapi.st/embed/tv/${tmdbId || id}/${season}/${episode}?theme=dark`,
+    vidlink: {
+        name: 'Vidlink',
+        movie: (id) => `https://vidlink.pro/movie/${id}`,
+        series: (id, season, episode) => `https://vidlink.pro/tv/${id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
     embedmaster: {
@@ -36,10 +29,23 @@ const STREAMING_PROVIDERS = {
         series: (id, season, episode) => `https://embedmaster.link/tv/${id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
     },
+    vidfast: {
+        name: 'Vidfast',
+        movie: (id) => `https://vidfast.vc/movie/${id}`,
+        series: (id, season, episode) => `https://vidfast.pro/tv/${id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+        // Domains: https://vidsrc.domains/
+    },
     movietv: {
         name: 'MovieTV',
         movie: (id) => `https://movietvapi.stream/embed/${id}`,
         series: (id, season, episode) => `https://movietvapi.stream/embed/tv/${id}/${season}/${episode}`,
+        referrerPolicy: 'no-referrer'
+    },
+    multiembed: {
+        name: 'Multiembed',
+        movie: (id) => `https://multiembed.mov/?video_id=${id}`,
+        series: (id, season, episode) => `https://multiembed.mov/?video_id=${id}&s=${season}&e=${episode}`,
         referrerPolicy: 'no-referrer'
     },
     embed2: {
@@ -48,24 +54,12 @@ const STREAMING_PROVIDERS = {
         series: (id, season, episode) => `https://www.2embed.cc/embedtv/${id}&s=${season}&e=${episode}`,
         referrerPolicy: null
     },
-    videasy: {
-        name: 'Videasy',
-        movie: (id) => `https://player.videasy.net/movie/${id}`,
-        series: (id, season, episode) => `https://player.videasy.net/tv/${id}/${season}/${episode}`,
-        referrerPolicy: 'no-referrer'
-    },
     vidsrc: {
         name: 'Vidsrc',
         movie: (id) => `https://vidsrcme.ru/embed/movie/${id}`,
         series: (id, season, episode) => `https://vidsrcme.ru/embed/tv/${id}/${season}/${episode}`,
         referrerPolicy: 'no-referrer'
         // Domains: https://vidsrc.domains/
-    },
-    multiembed: {
-        name: 'Multiembed',
-        movie: (id) => `https://multiembed.mov/?video_id=${id}`,
-        series: (id, season, episode) => `https://multiembed.mov/?video_id=${id}&s=${season}&e=${episode}`,
-        referrerPolicy: 'no-referrer'
     },
 };
 

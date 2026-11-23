@@ -912,8 +912,62 @@ function createShelfElement({ title, icon, items, isHistory = false, isRanked = 
     `;
     section.appendChild(header);
 
+    const shelfWrapper = document.createElement('div');
+    shelfWrapper.className = 'shelf-wrapper';
+
+    // Desktop Carousel Scroll Arrows (< and >)
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'shelf-arrow shelf-arrow-left';
+    prevBtn.setAttribute('aria-label', `Scroll ${title} left`);
+    prevBtn.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>`;
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'shelf-arrow shelf-arrow-right';
+    nextBtn.setAttribute('aria-label', `Scroll ${title} right`);
+    nextBtn.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>`;
+
     const scrollContainer = document.createElement('div');
     scrollContainer.className = 'shelf-scroll';
+
+    const updateArrowState = () => {
+        const maxScroll = scrollContainer.scrollWidth - scrollContainer.clientWidth;
+        if (maxScroll <= 5) {
+            prevBtn.classList.remove('is-visible');
+            nextBtn.classList.remove('is-visible');
+            return;
+        }
+        if (scrollContainer.scrollLeft > 15) {
+            prevBtn.classList.add('is-visible');
+        } else {
+            prevBtn.classList.remove('is-visible');
+        }
+
+        if (scrollContainer.scrollLeft < maxScroll - 15) {
+            nextBtn.classList.add('is-visible');
+        } else {
+            nextBtn.classList.remove('is-visible');
+        }
+    };
+
+    const getScrollStep = () => Math.max(340, Math.floor(scrollContainer.clientWidth * 0.75));
+
+    prevBtn.addEventListener('click', () => {
+        scrollContainer.scrollBy({ left: -getScrollStep(), behavior: 'smooth' });
+    });
+
+    nextBtn.addEventListener('click', () => {
+        scrollContainer.scrollBy({ left: getScrollStep(), behavior: 'smooth' });
+    });
+
+    scrollContainer.addEventListener('scroll', updateArrowState, { passive: true });
+    window.addEventListener('resize', updateArrowState, { passive: true });
+
+    // Initialize arrow state once mounted
+    requestAnimationFrame(() => {
+        setTimeout(updateArrowState, 150);
+    });
 
     items.forEach((item, index) => {
         const card = document.createElement('div');
@@ -999,7 +1053,8 @@ function createShelfElement({ title, icon, items, isHistory = false, isRanked = 
         scrollContainer.appendChild(card);
     });
 
-    section.appendChild(scrollContainer);
+    shelfWrapper.append(prevBtn, scrollContainer, nextBtn);
+    section.appendChild(shelfWrapper);
     return section;
 }
 
